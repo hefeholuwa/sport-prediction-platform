@@ -2,16 +2,25 @@ import React from 'react';
 import { Target, Zap, ChevronRight } from 'lucide-react';
 
 export default function MatchCard({ item, onSelectMatch }) {
-  const { home_team, away_team, match_date, odds, prediction } = item;
-  const p = prediction;
+  const home_team = item?.home_team || 'Unknown Home';
+  const away_team = item?.away_team || 'Unknown Away';
+  const match_date = item?.match_date || 'Upcoming';
+  const odds = item?.odds || {};
+  const p = item?.prediction || {};
 
-  const homePct = Math.round(p.home_win * 100);
-  const drawPct = Math.round(p.draw * 100);
-  const awayPct = Math.round(p.away_win * 100);
+  const homeWinProb = p.home_win ?? 0.33;
+  const drawProb = p.draw ?? 0.34;
+  const awayWinProb = p.away_win ?? 0.33;
 
-  // Check for value bet on 1X2
-  const homeEV = Math.round(((p.home_win * odds.home) - 1) * 100);
-  const awayEV = Math.round(((p.away_win * odds.away) - 1) * 100);
+  const homePct = Math.round(homeWinProb * 100);
+  const drawPct = Math.round(drawProb * 100);
+  const awayPct = Math.round(awayWinProb * 100);
+
+  // Check for value bet on 1X2 defensively
+  const homeOdds = odds.home || 1.0;
+  const awayOdds = odds.away || 1.0;
+  const homeEV = Math.round(((homeWinProb * homeOdds) - 1) * 100);
+  const awayEV = Math.round(((awayWinProb * awayOdds) - 1) * 100);
   const hasValue = homeEV >= 5 || awayEV >= 5;
 
   return (

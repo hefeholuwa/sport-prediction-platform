@@ -1,14 +1,31 @@
-import React from 'react';
-import { X, Award, Shield } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { X, Award } from 'lucide-react';
 
 export default function MatchModal({ item, onClose }) {
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   if (!item) return null;
-  const { home_team, away_team, prediction, odds } = item;
+
+  const home_team = item?.home_team || 'Home';
+  const away_team = item?.away_team || 'Away';
+  const prediction = item?.prediction || {};
   const matrix = prediction.matrix || [];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#161F30] border border-slate-700/80 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl">
+    <div 
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div 
+        onClick={e => e.stopPropagation()}
+        className="bg-[#161F30] border border-slate-700/80 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl"
+      >
         <div className="flex justify-between items-start mb-6">
           <div>
             <h2 className="text-xl font-bold text-white">{home_team} vs {away_team}</h2>
@@ -71,15 +88,19 @@ export default function MatchModal({ item, onClose }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs mb-4">
           <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
             <div className="text-slate-400 mb-1">Most Likely Score</div>
-            <div className="text-lg font-bold font-mono text-emerald-400">{prediction.predicted_score}</div>
+            <div className="text-lg font-bold font-mono text-emerald-400">{prediction.predicted_score || 'N/A'}</div>
           </div>
           <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50">
             <div className="text-slate-400 mb-1">Expected Goals (xG)</div>
-            <div className="text-lg font-bold font-mono text-white">{prediction.home_xg} - {prediction.away_xg}</div>
+            <div className="text-lg font-bold font-mono text-white">
+              {prediction.home_xg ?? '-'} - {prediction.away_xg ?? '-'}
+            </div>
           </div>
           <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700/50 col-span-2 sm:col-span-1">
             <div className="text-slate-400 mb-1">Over 2.5 Probability</div>
-            <div className="text-lg font-bold font-mono text-amber-400">{Math.round(prediction.over_2_5 * 100)}%</div>
+            <div className="text-lg font-bold font-mono text-amber-400">
+              {prediction.over_2_5 !== undefined ? `${Math.round(prediction.over_2_5 * 100)}%` : 'N/A'}
+            </div>
           </div>
         </div>
 
