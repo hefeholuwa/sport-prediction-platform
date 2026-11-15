@@ -1,7 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Text, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
+
+def utc_now():
+    return datetime.now(timezone.utc)
 
 class League(Base):
     __tablename__ = "leagues"
@@ -12,6 +15,7 @@ class League(Base):
     csv_code = Column(String, nullable=False)
 
     matches = relationship("Match", back_populates="league")
+    teams = relationship("Team", back_populates="league")
 
 class Team(Base):
     __tablename__ = "teams"
@@ -21,7 +25,9 @@ class Team(Base):
     league_id = Column(String, ForeignKey("leagues.id"), nullable=False)
     attack_rating = Column(Float, default=1.0)
     defense_rating = Column(Float, default=1.0)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    league = relationship("League", back_populates="teams")
 
 class Match(Base):
     __tablename__ = "matches"
@@ -46,7 +52,7 @@ class Prediction(Base):
     __tablename__ = "predictions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    match_id = Column(Integer, ForeignKey("matches.id"), nullable=False)
+    match_id = Column(Integer, ForeignKey("matches.id"), unique=True, nullable=False)
     home_win_prob = Column(Float, nullable=False)
     draw_prob = Column(Float, nullable=False)
     away_win_prob = Column(Float, nullable=False)
@@ -58,6 +64,6 @@ class Prediction(Base):
     away_xg = Column(Float, nullable=False)
     predicted_score = Column(String, nullable=False)
     score_matrix_json = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     match = relationship("Match", back_populates="prediction")
