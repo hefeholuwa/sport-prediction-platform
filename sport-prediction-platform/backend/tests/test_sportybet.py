@@ -162,3 +162,23 @@ def test_api_sportybet_combos_endpoint():
         assert len(leg["match_date"]) > 0
 
 
+def test_sportybet_timeframe_filtering():
+    # Test today filter
+    resp = client.get("/api/sportybet/value-bets?timeframe=today&min_ev=0.01")
+    assert resp.status_code == 200
+    bets = resp.json()
+    assert isinstance(bets, list)
+    for b in bets:
+        assert "2026-11-15" in b["match_date"]
+
+    # Test today combos
+    combo_resp = client.get("/api/sportybet/combos?timeframe=today&bankroll=50000")
+    assert combo_resp.status_code == 200
+    combo_data = combo_resp.json()
+    assert combo_data["timeframe"] == "today"
+    two_odds = combo_data["combos"].get("two_odds")
+    if two_odds:
+        for leg in two_odds["legs"]:
+            assert "2026-11-15" in leg["match_date"]
+
+

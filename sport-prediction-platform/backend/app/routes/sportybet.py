@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from app.pipeline.sportybet import SportyBetConnector, LEAGUE_TO_SPORTYBET_TOURNAMENT
@@ -18,6 +19,7 @@ class ActionSheetRequest(BaseModel):
     strategy: str = Field(default="compounder", description="'compounder' (High strike-rate 50%+ win rate) or 'value' (Pure +EV)")
     max_odds: float = Field(default=3.20, gt=1.0, description="Max decimal odds cutoff to exclude longshots")
     min_prob: float = Field(default=0.40, ge=0.0, le=1.0, description="Minimum win probability")
+    timeframe: str = Field(default="all", description="'today', 'next_24h', 'next_round', or 'all'")
 
 
 async def get_all_sportybet_fixtures(league_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -59,10 +61,38 @@ async def get_all_sportybet_fixtures(league_id: Optional[str] = None) -> List[Di
     return all_fixtures
 
 
+def is_within_timeframe(match_date_str: str, timeframe: str) -> bool:
+    """Filter match based on user's timeframe preference."""
+    if not match_date_str or not timeframe or timeframe == "all" or match_date_str == "Upcoming":
+        return True
+    
+    try:
+        parts = match_date_str.split(" ")
+        match_date_part = parts[0]
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        ref_date_str = "2026-11-15"
+        
+        if timeframe == "today":
+            return match_date_part == ref_date_str or match_date_part == today_str
+        elif timeframe == "next_24h":
+            return match_date_part in (ref_date_str, "2026-11-16", today_str)
+        elif timeframe == "next_round":
+            return match_date_part <= "2026-11-23"
+    except Exception:
+        pass
+    return True
+
+
 @router.get("/fixtures", response_model=List[Dict[str, Any]])
-async def list_sportybet_fixtures(league_id: Optional[str] = Query(None)) -> List[Dict[str, Any]]:
+async def list_sportybet_fixtures(
+    league_id: Optional[str] = Query(None),
+    timeframe: Optional[str] = Query("all", description="Timeframe: 'today', 'next_24h', 'next_round', or 'all'")
+) -> List[Dict[str, Any]]:
     """Return live scheduled matches and decimal odds from SportyBet."""
-    return await get_all_sportybet_fixtures(league_id)
+    fixtures = await get_all_sportybet_fixtures(league_id)
+    if timeframe and timeframe != "all":
+        fixtures = [f for f in fixtures if is_within_timeframe(f.get("match_date", ""), timeframe)]
+    return fixtures
 
 
 @router.get("/value-bets", response_model=List[Dict[str, Any]])
@@ -72,10 +102,13 @@ async def list_sportybet_value_bets(
     league_id: Optional[str] = Query(None, description="League code filter (e.g. E0, SP1, ALL)"),
     max_odds: float = Query(3.50, gt=1.0, description="Max decimal odds cutoff to exclude longshots"),
     min_prob: float = Query(0.20, ge=0.0, description="Minimum win probability"),
-    strategy: Optional[str] = Query("all", description="Strategy filter: 'compounder', 'value', or 'all'")
+    strategy: Optional[str] = Query("all", description="Strategy filter: 'compounder', 'value', or 'all'"),
+    timeframe: Optional[str] = Query("all", description="Timeframe filter: 'today', 'next_24h', 'next_round', or 'all'")
 ) -> List[Dict[str, Any]]:
     """Scan SportyBet odds with the Dixon-Coles model and return profitable +EV betting edges."""
     fixtures = await get_all_sportybet_fixtures(league_id)
+    if timeframe and timeframe != "all":
+        fixtures = [f for f in fixtures if is_within_timeframe(f.get("match_date", ""), timeframe)]
     
     eff_max_odds = 2.25 if strategy == "compounder" else max_odds
     eff_min_prob = 0.48 if strategy == "compounder" else min_prob
@@ -116,6 +149,7 @@ async def list_sportybet_value_bets(
 
     return value_bets
 
+
 def build_combo_slip(
     available_bets: List[Dict[str, Any]],
     target_odds: float,
@@ -125,7 +159,8 @@ def build_combo_slip(
     max_legs: int = 15,
     name: str = "Combo",
     stake_amount: float = 1000.0,
-    currency: str = "NGN"
+    currency: str = "NGN",
+    max_days_span: int = 3
 ) -> Optional[Dict[str, Any]]:
     """Construct an optimal non-correlated accumulator slip targeting a specific combined odds payout."""
     # Deduplicate: exactly 1 selection per fixture to ensure valid betslip
@@ -157,6 +192,20 @@ def build_combo_slip(
     for leg in pool:
         if leg["fixture"] in used_fixtures:
             continue
+
+        # Prevent combining fixtures across distant weeks in the same slip
+        leg_date = leg.get("match_date", "")
+        if selected_legs and max_days_span > 0:
+            first_date_str = selected_legs[0].get("match_date", "").split(" ")[0]
+            curr_date_str = leg_date.split(" ")[0] if leg_date else ""
+            if first_date_str and curr_date_str:
+                try:
+                    d1 = datetime.strptime(first_date_str, "%Y-%m-%d")
+                    d2 = datetime.strptime(curr_date_str, "%Y-%m-%d")
+                    if abs((d2 - d1).days) > max_days_span:
+                        continue
+                except Exception:
+                    pass
 
         selected_legs.append(leg)
         used_fixtures.add(leg["fixture"])
@@ -196,14 +245,18 @@ def build_combo_slip(
 @router.post("/action-sheet", response_model=Dict[str, Any])
 async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
     """Generate a daily actionable betslip on SportyBet (singles + 2, 5, 10, 50, 100 odds combos)."""
-    # Fetch all value bets meeting min_ev and strategy criteria
+    timeframe = req.timeframe or "all"
+    max_days = 0 if timeframe == "today" else 1 if timeframe == "next_24h" else 3
+
+    # Fetch all value bets meeting min_ev, strategy, and timeframe criteria
     raw_bets = await list_sportybet_value_bets(
         min_ev=req.min_ev,
         market="ALL",
         league_id="ALL",
         max_odds=req.max_odds,
         min_prob=req.min_prob,
-        strategy=req.strategy
+        strategy=req.strategy,
+        timeframe=timeframe
     )
 
     singles = []
@@ -228,11 +281,11 @@ async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
         })
 
     # Build Multi-Tier Acca Combos (2 Sure Odds, 5 Odds, 10 Odds, 50 Odds, 100 Odds)
-    combo_2 = build_combo_slip(raw_bets, 2.0, min_leg_odds=1.20, max_leg_odds=1.65, min_prob=0.65, max_legs=3, name="2 Sure Odds Banker", stake_amount=round(req.bankroll * 0.03, 2), currency=req.currency)
-    combo_5 = build_combo_slip(raw_bets, 5.0, min_leg_odds=1.25, max_leg_odds=1.75, min_prob=0.60, max_legs=5, name="5 Sure Odds Multiplier", stake_amount=round(req.bankroll * 0.015, 2), currency=req.currency)
-    combo_10 = build_combo_slip(raw_bets, 10.0, min_leg_odds=1.30, max_leg_odds=1.80, min_prob=0.58, max_legs=8, name="10 Odds Value Ticket", stake_amount=round(req.bankroll * 0.008, 2), currency=req.currency)
-    combo_50 = build_combo_slip(raw_bets, 50.0, min_leg_odds=1.35, max_leg_odds=1.95, min_prob=0.52, max_legs=11, name="50 Mega Odds Ticket", stake_amount=max(100.0, round(req.bankroll * 0.003, 2)), currency=req.currency)
-    combo_100 = build_combo_slip(raw_bets, 100.0, min_leg_odds=1.35, max_leg_odds=2.05, min_prob=0.50, max_legs=14, name="100 Mega Odds Jackpot", stake_amount=max(100.0, round(req.bankroll * 0.002, 2)), currency=req.currency)
+    combo_2 = build_combo_slip(raw_bets, 2.0, min_leg_odds=1.20, max_leg_odds=1.65, min_prob=0.65, max_legs=3, name="2 Sure Odds Banker", stake_amount=round(req.bankroll * 0.03, 2), currency=req.currency, max_days_span=max_days)
+    combo_5 = build_combo_slip(raw_bets, 5.0, min_leg_odds=1.25, max_leg_odds=1.75, min_prob=0.60, max_legs=5, name="5 Sure Odds Multiplier", stake_amount=round(req.bankroll * 0.015, 2), currency=req.currency, max_days_span=max_days)
+    combo_10 = build_combo_slip(raw_bets, 10.0, min_leg_odds=1.30, max_leg_odds=1.80, min_prob=0.58, max_legs=8, name="10 Odds Value Ticket", stake_amount=round(req.bankroll * 0.008, 2), currency=req.currency, max_days_span=max_days)
+    combo_50 = build_combo_slip(raw_bets, 50.0, min_leg_odds=1.35, max_leg_odds=1.95, min_prob=0.52, max_legs=11, name="50 Mega Odds Ticket", stake_amount=max(100.0, round(req.bankroll * 0.003, 2)), currency=req.currency, max_days_span=max_days)
+    combo_100 = build_combo_slip(raw_bets, 100.0, min_leg_odds=1.35, max_leg_odds=2.05, min_prob=0.50, max_legs=14, name="100 Mega Odds Jackpot", stake_amount=max(100.0, round(req.bankroll * 0.002, 2)), currency=req.currency, max_days_span=max_days)
 
     combos = {
         "two_odds": combo_2,
@@ -247,6 +300,7 @@ async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
     return {
         "status": "ready",
         "strategy": req.strategy,
+        "timeframe": timeframe,
         "bankroll": req.bankroll,
         "currency": req.currency,
         "total_allocated_stake": round(total_allocated_stake, 2),
@@ -262,25 +316,29 @@ async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
 async def get_sportybet_combos(
     bankroll: float = Query(50000.0, gt=0),
     currency: str = Query("NGN"),
-    min_ev: float = Query(0.01, ge=0.0)
+    min_ev: float = Query(0.01, ge=0.0),
+    timeframe: str = Query("all", description="'today', 'next_24h', 'next_round', or 'all'")
 ) -> Dict[str, Any]:
     """Generate all popular combo slips (2 Odds, 5 Odds, 10 Odds, 50 Odds, 100 Odds)."""
+    max_days = 0 if timeframe == "today" else 1 if timeframe == "next_24h" else 3
     raw_bets = await list_sportybet_value_bets(
         min_ev=min_ev,
         market="ALL",
         league_id="ALL",
-        strategy="compounder"
+        strategy="compounder",
+        timeframe=timeframe
     )
-    combo_2 = build_combo_slip(raw_bets, 2.0, min_leg_odds=1.20, max_leg_odds=1.65, min_prob=0.65, max_legs=3, name="2 Sure Odds Banker", stake_amount=round(bankroll * 0.03, 2), currency=currency)
-    combo_5 = build_combo_slip(raw_bets, 5.0, min_leg_odds=1.25, max_leg_odds=1.75, min_prob=0.60, max_legs=5, name="5 Sure Odds Multiplier", stake_amount=round(bankroll * 0.015, 2), currency=currency)
-    combo_10 = build_combo_slip(raw_bets, 10.0, min_leg_odds=1.30, max_leg_odds=1.80, min_prob=0.58, max_legs=8, name="10 Odds Value Ticket", stake_amount=round(bankroll * 0.008, 2), currency=currency)
-    combo_50 = build_combo_slip(raw_bets, 50.0, min_leg_odds=1.35, max_leg_odds=1.95, min_prob=0.52, max_legs=11, name="50 Mega Odds Ticket", stake_amount=max(100.0, round(bankroll * 0.003, 2)), currency=currency)
-    combo_100 = build_combo_slip(raw_bets, 100.0, min_leg_odds=1.35, max_leg_odds=2.05, min_prob=0.50, max_legs=14, name="100 Mega Odds Jackpot", stake_amount=max(100.0, round(bankroll * 0.002, 2)), currency=currency)
+    combo_2 = build_combo_slip(raw_bets, 2.0, min_leg_odds=1.20, max_leg_odds=1.65, min_prob=0.65, max_legs=3, name="2 Sure Odds Banker", stake_amount=round(bankroll * 0.03, 2), currency=currency, max_days_span=max_days)
+    combo_5 = build_combo_slip(raw_bets, 5.0, min_leg_odds=1.25, max_leg_odds=1.75, min_prob=0.60, max_legs=5, name="5 Sure Odds Multiplier", stake_amount=round(bankroll * 0.015, 2), currency=currency, max_days_span=max_days)
+    combo_10 = build_combo_slip(raw_bets, 10.0, min_leg_odds=1.30, max_leg_odds=1.80, min_prob=0.58, max_legs=8, name="10 Odds Value Ticket", stake_amount=round(bankroll * 0.008, 2), currency=currency, max_days_span=max_days)
+    combo_50 = build_combo_slip(raw_bets, 50.0, min_leg_odds=1.35, max_leg_odds=1.95, min_prob=0.52, max_legs=11, name="50 Mega Odds Ticket", stake_amount=max(100.0, round(bankroll * 0.003, 2)), currency=currency, max_days_span=max_days)
+    combo_100 = build_combo_slip(raw_bets, 100.0, min_leg_odds=1.35, max_leg_odds=2.05, min_prob=0.50, max_legs=14, name="100 Mega Odds Jackpot", stake_amount=max(100.0, round(bankroll * 0.002, 2)), currency=currency, max_days_span=max_days)
 
     return {
         "status": "ready",
         "bankroll": bankroll,
         "currency": currency,
+        "timeframe": timeframe,
         "combos": {
             "two_odds": combo_2,
             "five_odds": combo_5,

@@ -8,6 +8,7 @@ export default function SportyBetTab() {
   const [minEv, setMinEv] = useState(0.03);
   const [maxBets, setMaxBets] = useState(5);
   const [strategy, setStrategy] = useState('compounder'); // 'compounder' | 'value'
+  const [timeframe, setTimeframe] = useState('today'); // 'today' | 'next_24h' | 'next_round' | 'all'
   const [selectedComboTab, setSelectedComboTab] = useState('two_odds'); // 'two_odds' | 'five_odds' | 'ten_odds' | 'fifty_odds' | 'hundred_odds'
   const [actionSheet, setActionSheet] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -17,7 +18,7 @@ export default function SportyBetTab() {
 
   useEffect(() => {
     loadActionSheet();
-  }, [bankroll, currency, minEv, maxBets, strategy]);
+  }, [bankroll, currency, minEv, maxBets, strategy, timeframe]);
 
   async function loadActionSheet() {
     setLoading(true);
@@ -28,7 +29,8 @@ export default function SportyBetTab() {
         currency: currency,
         min_ev: Number(minEv),
         max_bets: Number(maxBets) || 5,
-        strategy: strategy
+        strategy: strategy,
+        timeframe: timeframe
       });
       setActionSheet(data);
     } catch (err) {
@@ -151,6 +153,50 @@ export default function SportyBetTab() {
           <span>
             <b>Anti-Underdog Safeguard Active:</b> Longshots pruned. Odds capped at {strategy === 'compounder' ? '2.25' : '3.20'}.
           </span>
+        </div>
+      </div>
+
+      {/* Matchday Timeframe Filter */}
+      <div className="bg-[#161F30] border border-slate-800 p-3 rounded-2xl flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div className="flex flex-wrap gap-1.5 w-full md:w-auto">
+          {[
+            { id: 'today', label: "🔥 Today's Matches", sub: 'Settle Today' },
+            { id: 'next_24h', label: '⏰ Next 24-48 Hours', sub: 'Today & Tomorrow' },
+            { id: 'next_round', label: '⚽ Next Matchday (Nov 20-22)', sub: 'Weekend Round' },
+            { id: 'all', label: '🌐 All Upcoming', sub: 'Full Schedule' }
+          ].map(t => {
+            const isSelected = timeframe === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTimeframe(t.id)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-0.5 transition-all ${
+                  isSelected
+                    ? 'bg-red-600 text-white shadow-md shadow-red-900/40'
+                    : 'bg-[#0F172A] text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800'
+                }`}
+              >
+                <span>{t.label}</span>
+                <span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-slate-500'}`}>{t.sub}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="text-xs text-slate-400 bg-[#0F172A] p-2.5 rounded-xl border border-slate-800 w-full md:w-auto flex items-center gap-2">
+          {timeframe === 'today' ? (
+            <span className="text-emerald-400 font-medium">
+              ✅ Showing matches playing <b>TODAY (Nov 15)</b> so your ticket settles today.
+            </span>
+          ) : timeframe === 'next_24h' ? (
+            <span className="text-amber-400 font-medium">
+              ⏰ Showing matches kicking off within the next 24–48 hours.
+            </span>
+          ) : (
+            <span>
+              ℹ️ Major European top flights (EPL, La Liga 1, Serie A) are currently on international break and resume on <b>Nov 20–22</b>.
+            </span>
+          )}
         </div>
       </div>
 

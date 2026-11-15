@@ -48,11 +48,12 @@ export async function fetchSportyBetFixtures(leagueId = "ALL") {
   return res.json();
 }
 
-export async function fetchSportyBetValueBets(minEv = 0.03, market = "ALL", leagueId = "ALL") {
+export async function fetchSportyBetValueBets(minEv = 0.03, market = "ALL", leagueId = "ALL", timeframe = "all") {
   const params = new URLSearchParams();
   if (minEv !== undefined && minEv !== null) params.append("min_ev", minEv.toString());
   if (market && market !== "ALL") params.append("market", market);
   if (leagueId && leagueId !== "ALL") params.append("league_id", leagueId);
+  if (timeframe && timeframe !== "all") params.append("timeframe", timeframe);
 
   const res = await fetch(`${API_BASE}/sportybet/value-bets?${params.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch SportyBet value bets");

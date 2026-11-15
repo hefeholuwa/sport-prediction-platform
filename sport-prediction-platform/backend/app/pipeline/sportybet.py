@@ -12,7 +12,12 @@ LEAGUE_TO_SPORTYBET_TOURNAMENT: Dict[str, str] = {
     "SP1": "sr:tournament:8",      # La Liga
     "I1": "sr:tournament:23",      # Serie A
     "D1": "sr:tournament:35",      # Bundesliga
-    "F1": "sr:tournament:34"       # Ligue 1
+    "F1": "sr:tournament:34",      # Ligue 1
+    "SP2": "sr:tournament:54",     # La Liga 2 (Segunda Division)
+    "E1": "sr:tournament:18",      # Championship
+    "N1": "sr:tournament:37",      # Eredivisie
+    "B1": "sr:tournament:38",      # Belgium Pro League
+    "BR1": "sr:tournament:325"     # Brazil Serie A
 }
 
 SPORTYBET_TO_LEAGUE: Dict[str, str] = {v: k for k, v in LEAGUE_TO_SPORTYBET_TOURNAMENT.items()}
