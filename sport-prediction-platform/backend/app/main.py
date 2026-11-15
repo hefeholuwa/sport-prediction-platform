@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import fixtures, predictions, value_bets, backtest
+from app.routes import fixtures, predictions, value_bets, backtest, sportybet
 from app.database import engine, Base
 
 @asynccontextmanager
@@ -29,6 +29,7 @@ app.include_router(fixtures.router)
 app.include_router(predictions.router)
 app.include_router(value_bets.router)
 app.include_router(backtest.router)
+app.include_router(sportybet.router)
 
 @app.get("/")
 def root():
@@ -41,6 +42,9 @@ def root():
             "/api/fixtures",
             "/api/predictions",
             "/api/value-bets",
-            "/api/backtest"
+            "/api/backtest",
+            "/api/sportybet/fixtures",
+            "/api/sportybet/value-bets",
+            "/api/sportybet/action-sheet"
         ]
     }

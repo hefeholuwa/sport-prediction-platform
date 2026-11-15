@@ -5,6 +5,7 @@ import MatchCard from './components/MatchCard';
 import MatchModal from './components/MatchModal';
 import ValueBetScanner from './components/ValueBetScanner';
 import BacktestLab from './components/BacktestLab';
+import SportyBetTab from './components/SportyBetTab';
 import { fetchPredictions } from './services/api';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
@@ -83,6 +84,8 @@ export default function App() {
             )}
           </div>
         )}
+
+        {activeTab === 'sportybet' && <SportyBetTab />}
 
         {activeTab === 'value-scanner' && <ValueBetScanner />}
 

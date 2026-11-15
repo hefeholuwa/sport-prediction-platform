@@ -1,9 +1,10 @@
 import React from 'react';
-import { Activity, TrendingUp, BarChart2, ShieldCheck } from 'lucide-react';
+import { Activity, TrendingUp, BarChart2, ShieldCheck, Flame } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab }) {
   const navItems = [
     { id: 'predictions', label: 'Predictions', icon: Activity },
+    { id: 'sportybet', label: 'SportyBet +EV', icon: Flame, isSpecial: true },
     { id: 'value-scanner', label: 'Value Bet Scanner', icon: TrendingUp },
     { id: 'backtest', label: 'Backtest Lab', icon: BarChart2 }
   ];
@@ -35,11 +36,15 @@ export default function Navbar({ activeTab, setActiveTab }) {
                 onClick={() => setActiveTab(item.id)}
                 className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                   active
-                    ? 'bg-emerald-500 text-slate-950 font-semibold shadow-lg shadow-emerald-500/20'
+                    ? item.isSpecial
+                      ? 'bg-red-600 text-white font-semibold shadow-lg shadow-red-600/30'
+                      : 'bg-emerald-500 text-slate-950 font-semibold shadow-lg shadow-emerald-500/20'
+                    : item.isSpecial
+                    ? 'text-red-400 hover:text-white hover:bg-red-950/40 border border-red-900/30'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className={`h-4 w-4 ${item.isSpecial && !active ? 'text-red-500 animate-pulse' : ''}`} />
                 <span className="hidden sm:inline">{item.label}</span>
               </button>
             );
