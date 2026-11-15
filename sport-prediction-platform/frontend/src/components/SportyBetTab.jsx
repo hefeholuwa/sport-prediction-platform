@@ -6,6 +6,7 @@ export default function SportyBetTab() {
   const [bankroll, setBankroll] = useState(50000);
   const [currency, setCurrency] = useState('NGN');
   const [minEv, setMinEv] = useState(0.03);
+  const [maxBets, setMaxBets] = useState(5);
   const [strategy, setStrategy] = useState('compounder'); // 'compounder' | 'value'
   const [actionSheet, setActionSheet] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -15,7 +16,7 @@ export default function SportyBetTab() {
 
   useEffect(() => {
     loadActionSheet();
-  }, [bankroll, currency, minEv, strategy]);
+  }, [bankroll, currency, minEv, maxBets, strategy]);
 
   async function loadActionSheet() {
     setLoading(true);
@@ -25,7 +26,7 @@ export default function SportyBetTab() {
         bankroll: Number(bankroll) || 50000,
         currency: currency,
         min_ev: Number(minEv),
-        max_bets: 5,
+        max_bets: Number(maxBets) || 5,
         strategy: strategy
       });
       setActionSheet(data);
@@ -145,7 +146,7 @@ export default function SportyBetTab() {
       </div>
 
       {/* Settings Bar */}
-      <div className="bg-[#161F30] border border-slate-800 p-4 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+      <div className="bg-[#161F30] border border-slate-800 p-4 rounded-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
         <div>
           <label className="block text-xs font-medium text-slate-400 mb-1">Bankroll Setting</label>
           <div className="flex rounded-lg overflow-hidden border border-slate-700">
@@ -170,7 +171,26 @@ export default function SportyBetTab() {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1">Minimum Edge (+EV Cutoff)</label>
+          <label className="block text-xs font-medium text-slate-400 mb-1">Picks Per Day</label>
+          <div className="flex space-x-1">
+            {[3, 5, 8, 10].map(cnt => (
+              <button
+                key={cnt}
+                onClick={() => setMaxBets(cnt)}
+                className={`flex-1 py-1.5 rounded text-xs font-mono font-medium transition-colors ${
+                  maxBets === cnt
+                    ? 'bg-emerald-600 text-white font-bold'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                }`}
+              >
+                {cnt}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1">Minimum Edge (+EV)</label>
           <div className="flex space-x-1">
             {[0.02, 0.03, 0.05, 0.08].map(ev => (
               <button
@@ -192,10 +212,10 @@ export default function SportyBetTab() {
           <button
             onClick={loadActionSheet}
             disabled={loading}
-            className="w-full sm:w-auto px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+            className="w-full px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh SportyBet Odds</span>
+            <span>Refresh Odds</span>
           </button>
         </div>
       </div>
