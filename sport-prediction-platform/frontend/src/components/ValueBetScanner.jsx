@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, AlertTriangle, RefreshCw } from 'lucide-react';
+import { TrendingUp, AlertTriangle, RefreshCw, Calendar } from 'lucide-react';
 import { fetchValueBets } from '../services/api';
 
 export default function ValueBetScanner() {
@@ -109,7 +109,13 @@ export default function ValueBetScanner() {
               <tbody className="divide-y divide-slate-800/80">
                 {bets.map((bet, idx) => (
                   <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3 px-4 font-medium text-white">{bet.fixture}</td>
+                    <td className="py-3 px-4">
+                      <div className="font-medium text-white">{bet.fixture}</div>
+                      <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                        <Calendar className="h-3 w-3 text-slate-500 inline flex-shrink-0" />
+                        <span>{bet.match_date || 'Upcoming'}</span>
+                      </div>
+                    </td>
                     <td className="py-3 px-4">
                       <span className="bg-emerald-500/10 text-emerald-400 font-semibold px-2 py-0.5 rounded border border-emerald-500/30">
                         {bet.selection}

@@ -108,6 +108,8 @@ def test_api_sportybet_action_sheet():
     first_single = data["singles"][0]
     assert "stake_amount" in first_single
     assert "potential_return" in first_single
+    assert "match_date" in first_single
+    assert len(first_single["match_date"]) > 0
     assert first_single["stake_amount"] > 0
     assert first_single["currency"] == "NGN"
 
@@ -152,8 +154,11 @@ def test_api_sportybet_combos_endpoint():
     assert two_odds is not None
     assert two_odds["combined_odds"] >= 1.50
     assert two_odds["legs_count"] >= 2
-    # Ensure all legs are from unique fixtures
+    # Ensure all legs are from unique fixtures and have match_date
     fixtures = [l["fixture"] for l in two_odds["legs"]]
     assert len(fixtures) == len(set(fixtures))
+    for leg in two_odds["legs"]:
+        assert "match_date" in leg
+        assert len(leg["match_date"]) > 0
 
 

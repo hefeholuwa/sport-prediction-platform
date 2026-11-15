@@ -185,7 +185,8 @@ def build_combo_slip(
                 "market": l.get("market", "1X2"),
                 "sportybet_odds": l["bookmaker_odds"],
                 "prob_pct": round(l["model_prob"] * 100.0, 1),
-                "sportybet_id": l.get("sportybet_id")
+                "sportybet_id": l.get("sportybet_id"),
+                "match_date": l.get("match_date", "Upcoming")
             }
             for l in selected_legs
         ]
@@ -222,7 +223,8 @@ async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
             "recommended_stake_pct": b["stake_pct"],
             "stake_amount": stake_amount,
             "currency": req.currency,
-            "potential_return": round(stake_amount * b["bookmaker_odds"], 2)
+            "potential_return": round(stake_amount * b["bookmaker_odds"], 2),
+            "match_date": b.get("match_date", "Upcoming")
         })
 
     # Build Multi-Tier Acca Combos (2 Sure Odds, 5 Odds, 10 Odds, 50 Odds, 100 Odds)

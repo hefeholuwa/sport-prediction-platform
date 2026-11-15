@@ -1,5 +1,5 @@
 import React from 'react';
-import { Target, Zap, ChevronRight } from 'lucide-react';
+import { Target, Zap, ChevronRight, Clock } from 'lucide-react';
 
 export default function MatchCard({ item, onSelectMatch }) {
   const home_team = item?.home_team || 'Unknown Home';
@@ -27,7 +27,8 @@ export default function MatchCard({ item, onSelectMatch }) {
     <div className="bg-[#161F30] border border-slate-800/80 hover:border-slate-700 rounded-xl p-5 shadow-sm transition-all hover:shadow-md flex flex-col justify-between">
       <div>
         <div className="flex items-center justify-between text-xs text-slate-400 mb-3">
-          <span className="font-mono bg-slate-800/80 px-2 py-0.5 rounded text-slate-300 border border-slate-700/60">
+          <span className="font-mono bg-slate-800/80 px-2 py-0.5 rounded text-slate-300 border border-slate-700/60 flex items-center gap-1.5">
+            <Clock className="h-3 w-3 text-slate-400" />
             {match_date}
           </span>
           {hasValue && (

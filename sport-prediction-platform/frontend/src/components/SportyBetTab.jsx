@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Flame, Copy, Check, TrendingUp, AlertTriangle, RefreshCw, Zap, ShieldCheck } from 'lucide-react';
+import { Flame, Copy, Check, TrendingUp, AlertTriangle, RefreshCw, Zap, ShieldCheck, Calendar, Clock } from 'lucide-react';
 import { fetchSportyBetActionSheet, fetchSportyBetValueBets } from '../services/api';
 
 export default function SportyBetTab() {
@@ -40,7 +40,8 @@ export default function SportyBetTab() {
   }
 
   function copySingle(bet, idx) {
-    const text = `SportyBet Pick: ${bet.fixture} | Pick: ${bet.selection} | Odds: ${bet.sportybet_odds} | Edge: +${bet.ev_pct}% | Stake: ${currencySymbol()}${bet.stake_amount.toLocaleString()}`;
+    const timeStr = bet.match_date ? ` [${bet.match_date}]` : '';
+    const text = `SportyBet Pick: ${bet.fixture}${timeStr} | Pick: ${bet.selection} | Odds: ${bet.sportybet_odds} | Edge: +${bet.ev_pct}% | Stake: ${currencySymbol()}${bet.stake_amount.toLocaleString()}`;
     navigator.clipboard.writeText(text);
     setCopiedId(idx);
     setTimeout(() => setCopiedId(null), 2000);
@@ -48,7 +49,10 @@ export default function SportyBetTab() {
 
   function copyCombo(combo, comboKey) {
     if (!combo) return;
-    const legsText = combo.legs.map((l, i) => `${i + 1}. ${l.fixture} -> ${l.selection} (@${l.sportybet_odds}) [${l.prob_pct}% prob]`).join('\n');
+    const legsText = combo.legs.map((l, i) => {
+      const timeStr = l.match_date ? ` [${l.match_date}]` : '';
+      return `${i + 1}. ${l.fixture}${timeStr} -> ${l.selection} (@${l.sportybet_odds}) [${l.prob_pct}% prob]`;
+    }).join('\n');
     const text = `🎯 SPORTYBET ${combo.name.toUpperCase()}:\n${legsText}\n\nCombined Odds: @${combo.combined_odds}\nWin Probability: ${combo.combined_win_prob_pct}%\nRecommended Stake: ${currencySymbol()}${combo.stake_amount.toLocaleString()}\nPotential Return: ${currencySymbol()}${combo.potential_return.toLocaleString()}`;
     navigator.clipboard.writeText(text);
     setCopiedId(comboKey || 'combo');
@@ -59,14 +63,16 @@ export default function SportyBetTab() {
     if (!actionSheet) return;
     let text = `🔥 APEXPREDICT x SPORTYBET ACTION SHEET\nBankroll: ${currencySymbol()}${actionSheet.bankroll.toLocaleString()} | Staked: ${currencySymbol()}${actionSheet.total_allocated_stake.toLocaleString()} (${actionSheet.portfolio_allocation_pct}%)\n\n📌 TOP VALUE SINGLES:\n`;
     actionSheet.singles.forEach((s, i) => {
-      text += `${i + 1}. ${s.fixture} -> ${s.selection} (@${s.sportybet_odds}) | Edge: +${s.ev_pct}% | Stake: ${currencySymbol()}${s.stake_amount.toLocaleString()}\n`;
+      const timeStr = s.match_date ? ` [${s.match_date}]` : '';
+      text += `${i + 1}. ${s.fixture}${timeStr} -> ${s.selection} (@${s.sportybet_odds}) | Edge: +${s.ev_pct}% | Stake: ${currencySymbol()}${s.stake_amount.toLocaleString()}\n`;
     });
     if (actionSheet.combos) {
       Object.values(actionSheet.combos).forEach(c => {
         if (!c) return;
         text += `\n🎯 ${c.name.toUpperCase()} (@${c.combined_odds} | ${c.combined_win_prob_pct}% prob):\n`;
         c.legs.forEach(l => {
-          text += `• ${l.fixture} -> ${l.selection} (@${l.sportybet_odds})\n`;
+          const timeStr = l.match_date ? ` [${l.match_date}]` : '';
+          text += `• ${l.fixture}${timeStr} -> ${l.selection} (@${l.sportybet_odds})\n`;
         });
         text += `Stake: ${currencySymbol()}${c.stake_amount.toLocaleString()} | Return: ${currencySymbol()}${c.potential_return.toLocaleString()}\n`;
       });
@@ -344,7 +350,12 @@ export default function SportyBetTab() {
                         <div key={idx} className="bg-[#0F172A] p-2.5 rounded-xl border border-slate-800 flex justify-between items-center hover:border-slate-700 transition-colors">
                           <div className="min-w-0 pr-2">
                             <div className="font-semibold text-xs text-white truncate">{leg.fixture}</div>
-                            <div className="text-[11px] text-emerald-400 font-medium mt-0.5 truncate">{leg.selection}</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[11px] text-emerald-400 font-medium truncate">{leg.selection}</span>
+                              <span className="text-[10px] text-slate-400 font-mono flex items-center gap-0.5 flex-shrink-0">
+                                <Clock className="h-2.5 w-2.5 text-slate-500 inline" /> {leg.match_date || 'Upcoming'}
+                              </span>
+                            </div>
                           </div>
                           <div className="text-right flex-shrink-0">
                             <div className="font-mono font-bold text-white text-xs">@{leg.sportybet_odds}</div>
@@ -407,7 +418,13 @@ export default function SportyBetTab() {
                   <tbody className="divide-y divide-slate-800/80">
                     {actionSheet.singles.map((bet, idx) => (
                       <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3.5 px-4 font-semibold text-white">{bet.fixture}</td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-white">{bet.fixture}</div>
+                          <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                            <Calendar className="h-3 w-3 text-slate-500 inline flex-shrink-0" />
+                            <span>{bet.match_date || 'Upcoming'}</span>
+                          </div>
+                        </td>
                         <td className="py-3.5 px-4">
                           <span className="bg-red-500/10 text-red-300 font-semibold px-2 py-0.5 rounded border border-red-500/30">
                             {bet.selection} ({bet.market})

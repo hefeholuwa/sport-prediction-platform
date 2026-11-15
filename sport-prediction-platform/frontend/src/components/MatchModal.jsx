@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { X, Award } from 'lucide-react';
+import { X, Award, Clock } from 'lucide-react';
 
 export default function MatchModal({ item, onClose }) {
   useEffect(() => {
@@ -29,7 +29,13 @@ export default function MatchModal({ item, onClose }) {
         <div className="flex justify-between items-start mb-6">
           <div>
             <h2 className="text-xl font-bold text-white">{home_team} vs {away_team}</h2>
-            <p className="text-xs text-slate-400 font-mono mt-1">Dixon-Coles Scoreline Matrix & Probability Distribution</p>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <span className="text-xs font-mono bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700 flex items-center gap-1">
+                <Clock className="h-3 w-3 text-emerald-400" />
+                {item?.match_date || 'Upcoming'}
+              </span>
+              <span className="text-xs text-slate-400 font-mono">Dixon-Coles Scoreline Matrix & Probability Distribution</span>
+            </div>
           </div>
           <button 
             onClick={onClose} 
