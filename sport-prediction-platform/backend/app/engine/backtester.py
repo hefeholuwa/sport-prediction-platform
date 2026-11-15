@@ -1,6 +1,5 @@
-from typing import Dict, List, Any
+from typing import Dict, Any
 import pandas as pd
-import numpy as np
 
 class BacktestSimulator:
     def __init__(
@@ -11,14 +10,17 @@ class BacktestSimulator:
         flat_stake: float = 20.0,
         kelly_fraction: float = 0.20
     ) -> None:
+        if stake_mode not in ("flat", "kelly"):
+            raise ValueError(f"Invalid stake_mode '{stake_mode}'. Must be 'flat' or 'kelly'.")
+
         self.initial_bankroll = float(initial_bankroll)
         self.min_ev = float(min_ev)
-        self.stake_mode = stake_mode  # "flat" or "kelly"
+        self.stake_mode = stake_mode
         self.flat_stake = float(flat_stake)
         self.kelly_fraction = float(kelly_fraction)
 
     def run(self, df_matches: pd.DataFrame) -> Dict[str, Any]:
-        """Simulate betting history against historical closing odds."""
+        """Simulate betting history against historical closing odds for Home Win opportunities."""
         bankroll = self.initial_bankroll
         equity_curve = [{"step": 0, "date": "Start", "bankroll": round(bankroll, 2), "pnl": 0.0}]
         
@@ -29,6 +31,9 @@ class BacktestSimulator:
         max_drawdown = 0.0
 
         for idx, row in df_matches.iterrows():
+            if bankroll <= 0.0:
+                break
+
             prob_h = row.get("prob_h")
             odds_h = row.get("odds_h")
             result = row.get("result", "")
@@ -36,27 +41,31 @@ class BacktestSimulator:
 
             if prob_h is None or odds_h is None:
                 continue
+            try:
+                prob_h = float(prob_h)
+                odds_h = float(odds_h)
+            except (ValueError, TypeError):
+                continue
+
             if odds_h <= 1.01 or prob_h <= 0.0 or prob_h > 1.0:
                 continue
 
             ev = (prob_h * odds_h) - 1.0
             if ev >= self.min_ev:
-                total_bets += 1
-
                 # Determine stake size
                 if self.stake_mode == "kelly":
                     b = odds_h - 1.0
                     f_star = (b * prob_h - (1.0 - prob_h)) / b
-                    stake = round(max(0.0, min(0.05, f_star * self.kelly_fraction)) * bankroll, 2)
-                    if stake < 5.0 and bankroll >= 5.0:
-                        stake = 5.0
+                    # Max 5% bankroll per bet
+                    target_stake = round(max(0.0, min(0.05, f_star * self.kelly_fraction)) * bankroll, 2)
+                    stake = min(bankroll, target_stake)
                 else:
                     stake = min(bankroll, self.flat_stake)
 
-                stake = min(stake, bankroll)
-                if stake <= 0:
+                if stake <= 0.0:
                     continue
 
+                total_bets += 1
                 total_staked += stake
 
                 if result == "H":
@@ -93,3 +102,4 @@ class BacktestSimulator:
             "max_drawdown_pct": round(max_drawdown * 100.0, 2),
             "equity_curve": equity_curve
         }
+

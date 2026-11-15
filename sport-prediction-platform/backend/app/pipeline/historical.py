@@ -1,8 +1,6 @@
 import io
 import httpx
 import pandas as pd
-from typing import Optional
-from app.config import SUPPORTED_LEAGUES
 
 class HistoricalDataLoader:
     BASE_URL = "https://www.football-data.co.uk/mmz4281"
@@ -19,7 +17,7 @@ class HistoricalDataLoader:
 
     @staticmethod
     def clean_dataframe(df: pd.DataFrame, league_code: str) -> pd.DataFrame:
-        """Standardize columns and filter out unplayed matches."""
+        """Standardize columns and filter out unplayed matches with robust odds fallbacks."""
         required = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'FTR']
         for col in required:
             if col not in df.columns:
@@ -29,9 +27,15 @@ class HistoricalDataLoader:
         df['FTHG'] = df['FTHG'].astype(int)
         df['FTAG'] = df['FTAG'].astype(int)
         
-        # Standardize odds with fallbacks
-        df['OddsH'] = df['B365H'] if 'B365H' in df.columns else (df['AvgH'] if 'AvgH' in df.columns else 2.0)
-        df['OddsD'] = df['B365D'] if 'B365D' in df.columns else (df['AvgD'] if 'AvgD' in df.columns else 3.2)
-        df['OddsA'] = df['B365A'] if 'B365A' in df.columns else (df['AvgA'] if 'AvgA' in df.columns else 3.5)
+        # Row-level odds fallback with combine_first and fillna
+        def extract_odds(primary_col: str, secondary_col: str, default_val: float) -> pd.Series:
+            s_primary = pd.to_numeric(df[primary_col], errors='coerce') if primary_col in df.columns else pd.Series(index=df.index, dtype=float)
+            s_secondary = pd.to_numeric(df[secondary_col], errors='coerce') if secondary_col in df.columns else pd.Series(index=df.index, dtype=float)
+            return s_primary.combine_first(s_secondary).fillna(default_val)
+
+        df['OddsH'] = extract_odds('B365H', 'AvgH', 2.0)
+        df['OddsD'] = extract_odds('B365D', 'AvgD', 3.2)
+        df['OddsA'] = extract_odds('B365A', 'AvgA', 3.5)
         
         return df
+
