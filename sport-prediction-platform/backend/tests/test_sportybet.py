@@ -135,3 +135,25 @@ def test_compounder_strategy_odds_and_probability_filtering():
         assert b["bookmaker_odds"] <= 2.25
         assert b["model_prob"] >= 0.48
 
+def test_api_sportybet_combos_endpoint():
+    resp = client.get("/api/sportybet/combos?bankroll=50000&currency=NGN&min_ev=0.01")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ready"
+    assert "combos" in data
+    combos = data["combos"]
+    assert "two_odds" in combos
+    assert "five_odds" in combos
+    assert "ten_odds" in combos
+    assert "fifty_odds" in combos
+    assert "hundred_odds" in combos
+
+    two_odds = combos["two_odds"]
+    assert two_odds is not None
+    assert two_odds["combined_odds"] >= 1.50
+    assert two_odds["legs_count"] >= 2
+    # Ensure all legs are from unique fixtures
+    fixtures = [l["fixture"] for l in two_odds["legs"]]
+    assert len(fixtures) == len(set(fixtures))
+
+

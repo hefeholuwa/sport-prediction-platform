@@ -116,10 +116,85 @@ async def list_sportybet_value_bets(
 
     return value_bets
 
+def build_combo_slip(
+    available_bets: List[Dict[str, Any]],
+    target_odds: float,
+    min_leg_odds: float = 1.15,
+    max_leg_odds: float = 1.85,
+    min_prob: float = 0.55,
+    max_legs: int = 15,
+    name: str = "Combo",
+    stake_amount: float = 1000.0,
+    currency: str = "NGN"
+) -> Optional[Dict[str, Any]]:
+    """Construct an optimal non-correlated accumulator slip targeting a specific combined odds payout."""
+    # Deduplicate: exactly 1 selection per fixture to ensure valid betslip
+    fixture_best: Dict[str, Dict[str, Any]] = {}
+    for b in available_bets:
+        f = b["fixture"]
+        if f not in fixture_best:
+            fixture_best[f] = b
+        else:
+            if b["model_prob"] > fixture_best[f]["model_prob"]:
+                fixture_best[f] = b
+
+    candidates = list(fixture_best.values())
+    if not candidates:
+        return None
+
+    # Filter pool by preferred odds and probability
+    pool = [c for c in candidates if min_leg_odds <= c["bookmaker_odds"] <= max_leg_odds and c["model_prob"] >= min_prob]
+    if len(pool) < 2:
+        pool = [c for c in candidates if c["bookmaker_odds"] <= 2.25]
+
+    pool.sort(key=lambda x: (x["model_prob"], x.get("ev", 0.0)), reverse=True)
+
+    selected_legs = []
+    combined_odds = 1.0
+    combined_prob = 1.0
+    used_fixtures = set()
+
+    for leg in pool:
+        if leg["fixture"] in used_fixtures:
+            continue
+
+        selected_legs.append(leg)
+        used_fixtures.add(leg["fixture"])
+        combined_odds *= leg["bookmaker_odds"]
+        combined_prob *= leg["model_prob"]
+
+        if combined_odds >= target_odds * 0.90 or len(selected_legs) >= max_legs:
+            break
+
+    if len(selected_legs) < 2 or combined_odds < target_odds * 0.60:
+        return None
+
+    return {
+        "name": name,
+        "target_odds": round(target_odds, 2),
+        "combined_odds": round(combined_odds, 2),
+        "combined_win_prob_pct": round(combined_prob * 100.0, 1),
+        "legs_count": len(selected_legs),
+        "stake_amount": round(stake_amount, 2),
+        "currency": currency,
+        "potential_return": round(stake_amount * combined_odds, 2),
+        "legs": [
+            {
+                "fixture": l["fixture"],
+                "selection": l["selection"],
+                "market": l.get("market", "1X2"),
+                "sportybet_odds": l["bookmaker_odds"],
+                "prob_pct": round(l["model_prob"] * 100.0, 1),
+                "sportybet_id": l.get("sportybet_id")
+            }
+            for l in selected_legs
+        ]
+    }
+
 
 @router.post("/action-sheet", response_model=Dict[str, Any])
 async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
-    """Generate a daily actionable betslip on SportyBet (singles + conservative accumulator)."""
+    """Generate a daily actionable betslip on SportyBet (singles + 2, 5, 10, 50, 100 odds combos)."""
     # Fetch all value bets meeting min_ev and strategy criteria
     raw_bets = await list_sportybet_value_bets(
         min_ev=req.min_ev,
@@ -150,40 +225,22 @@ async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
             "potential_return": round(stake_amount * b["bookmaker_odds"], 2)
         })
 
-    # Build Conservative 2-Leg Accumulator from top 2 highest probability +EV bets
-    conservative_double = None
-    high_prob_bets = sorted(raw_bets, key=lambda x: x["model_prob"], reverse=True)
-    if len(high_prob_bets) >= 2:
-        leg1 = high_prob_bets[0]
-        # Ensure leg 2 is from a different fixture to avoid correlation issues
-        leg2 = next((b for b in high_prob_bets[1:] if b["fixture"] != leg1["fixture"]), None)
-        if leg2:
-            combined_odds = round(leg1["bookmaker_odds"] * leg2["bookmaker_odds"], 2)
-            combined_prob = leg1["model_prob"] * leg2["model_prob"]
-            double_stake = round(req.bankroll * 0.02, 2)  # Conservative 2% stake
-            total_allocated_stake += double_stake
-            conservative_double = {
-                "name": "Daily Value Double",
-                "legs": [
-                    {
-                        "fixture": leg1["fixture"],
-                        "selection": leg1["selection"],
-                        "sportybet_odds": leg1["bookmaker_odds"],
-                        "prob_pct": round(leg1["model_prob"] * 100.0, 1)
-                    },
-                    {
-                        "fixture": leg2["fixture"],
-                        "selection": leg2["selection"],
-                        "sportybet_odds": leg2["bookmaker_odds"],
-                        "prob_pct": round(leg2["model_prob"] * 100.0, 1)
-                    }
-                ],
-                "combined_odds": combined_odds,
-                "combined_win_prob_pct": round(combined_prob * 100.0, 1),
-                "stake_amount": double_stake,
-                "currency": req.currency,
-                "potential_return": round(double_stake * combined_odds, 2)
-            }
+    # Build Multi-Tier Acca Combos (2 Sure Odds, 5 Odds, 10 Odds, 50 Odds, 100 Odds)
+    combo_2 = build_combo_slip(raw_bets, 2.0, min_leg_odds=1.20, max_leg_odds=1.65, min_prob=0.65, max_legs=3, name="2 Sure Odds Banker", stake_amount=round(req.bankroll * 0.03, 2), currency=req.currency)
+    combo_5 = build_combo_slip(raw_bets, 5.0, min_leg_odds=1.25, max_leg_odds=1.75, min_prob=0.60, max_legs=5, name="5 Sure Odds Multiplier", stake_amount=round(req.bankroll * 0.015, 2), currency=req.currency)
+    combo_10 = build_combo_slip(raw_bets, 10.0, min_leg_odds=1.30, max_leg_odds=1.80, min_prob=0.58, max_legs=8, name="10 Odds Value Ticket", stake_amount=round(req.bankroll * 0.008, 2), currency=req.currency)
+    combo_50 = build_combo_slip(raw_bets, 50.0, min_leg_odds=1.35, max_leg_odds=1.95, min_prob=0.52, max_legs=11, name="50 Mega Odds Ticket", stake_amount=max(100.0, round(req.bankroll * 0.003, 2)), currency=req.currency)
+    combo_100 = build_combo_slip(raw_bets, 100.0, min_leg_odds=1.35, max_leg_odds=2.05, min_prob=0.50, max_legs=14, name="100 Mega Odds Jackpot", stake_amount=max(100.0, round(req.bankroll * 0.002, 2)), currency=req.currency)
+
+    combos = {
+        "two_odds": combo_2,
+        "five_odds": combo_5,
+        "ten_odds": combo_10,
+        "fifty_odds": combo_50,
+        "hundred_odds": combo_100
+    }
+
+    conservative_double = combo_2
 
     return {
         "status": "ready",
@@ -194,5 +251,40 @@ async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
         "portfolio_allocation_pct": round((total_allocated_stake / req.bankroll) * 100.0, 2),
         "singles": singles,
         "conservative_double": conservative_double,
+        "combos": combos,
         "timestamp": "Today"
     }
+
+
+@router.get("/combos", response_model=Dict[str, Any])
+async def get_sportybet_combos(
+    bankroll: float = Query(50000.0, gt=0),
+    currency: str = Query("NGN"),
+    min_ev: float = Query(0.01, ge=0.0)
+) -> Dict[str, Any]:
+    """Generate all popular combo slips (2 Odds, 5 Odds, 10 Odds, 50 Odds, 100 Odds)."""
+    raw_bets = await list_sportybet_value_bets(
+        min_ev=min_ev,
+        market="ALL",
+        league_id="ALL",
+        strategy="compounder"
+    )
+    combo_2 = build_combo_slip(raw_bets, 2.0, min_leg_odds=1.20, max_leg_odds=1.65, min_prob=0.65, max_legs=3, name="2 Sure Odds Banker", stake_amount=round(bankroll * 0.03, 2), currency=currency)
+    combo_5 = build_combo_slip(raw_bets, 5.0, min_leg_odds=1.25, max_leg_odds=1.75, min_prob=0.60, max_legs=5, name="5 Sure Odds Multiplier", stake_amount=round(bankroll * 0.015, 2), currency=currency)
+    combo_10 = build_combo_slip(raw_bets, 10.0, min_leg_odds=1.30, max_leg_odds=1.80, min_prob=0.58, max_legs=8, name="10 Odds Value Ticket", stake_amount=round(bankroll * 0.008, 2), currency=currency)
+    combo_50 = build_combo_slip(raw_bets, 50.0, min_leg_odds=1.35, max_leg_odds=1.95, min_prob=0.52, max_legs=11, name="50 Mega Odds Ticket", stake_amount=max(100.0, round(bankroll * 0.003, 2)), currency=currency)
+    combo_100 = build_combo_slip(raw_bets, 100.0, min_leg_odds=1.35, max_leg_odds=2.05, min_prob=0.50, max_legs=14, name="100 Mega Odds Jackpot", stake_amount=max(100.0, round(bankroll * 0.002, 2)), currency=currency)
+
+    return {
+        "status": "ready",
+        "bankroll": bankroll,
+        "currency": currency,
+        "combos": {
+            "two_odds": combo_2,
+            "five_odds": combo_5,
+            "ten_odds": combo_10,
+            "fifty_odds": combo_50,
+            "hundred_odds": combo_100
+        }
+    }
+

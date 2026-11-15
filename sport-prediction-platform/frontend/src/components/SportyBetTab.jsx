@@ -8,6 +8,7 @@ export default function SportyBetTab() {
   const [minEv, setMinEv] = useState(0.03);
   const [maxBets, setMaxBets] = useState(5);
   const [strategy, setStrategy] = useState('compounder'); // 'compounder' | 'value'
+  const [selectedComboTab, setSelectedComboTab] = useState('two_odds'); // 'two_odds' | 'five_odds' | 'ten_odds' | 'fifty_odds' | 'hundred_odds'
   const [actionSheet, setActionSheet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,28 +46,30 @@ export default function SportyBetTab() {
     setTimeout(() => setCopiedId(null), 2000);
   }
 
-  function copyDouble(double) {
-    if (!double) return;
-    const legsText = double.legs.map(l => `• ${l.fixture} -> ${l.selection} (@${l.sportybet_odds})`).join('\n');
-    const text = `🎯 SportyBet Conservative Double:\n${legsText}\nCombined Odds: ${double.combined_odds}\nWin Prob: ${double.combined_win_prob_pct}%\nRecommended Stake: ${currencySymbol()}${double.stake_amount.toLocaleString()}\nPotential Return: ${currencySymbol()}${double.potential_return.toLocaleString()}`;
+  function copyCombo(combo, comboKey) {
+    if (!combo) return;
+    const legsText = combo.legs.map((l, i) => `${i + 1}. ${l.fixture} -> ${l.selection} (@${l.sportybet_odds}) [${l.prob_pct}% prob]`).join('\n');
+    const text = `🎯 SPORTYBET ${combo.name.toUpperCase()}:\n${legsText}\n\nCombined Odds: @${combo.combined_odds}\nWin Probability: ${combo.combined_win_prob_pct}%\nRecommended Stake: ${currencySymbol()}${combo.stake_amount.toLocaleString()}\nPotential Return: ${currencySymbol()}${combo.potential_return.toLocaleString()}`;
     navigator.clipboard.writeText(text);
-    setCopiedId('double');
+    setCopiedId(comboKey || 'combo');
     setTimeout(() => setCopiedId(null), 2000);
   }
 
   function copyEntireSlip() {
     if (!actionSheet) return;
-    let text = `🔥 APEXPREDICT x SPORTYBET DAILY ACTION SHEET\nBankroll: ${currencySymbol()}${actionSheet.bankroll.toLocaleString()} | Total Stake: ${currencySymbol()}${actionSheet.total_allocated_stake.toLocaleString()} (${actionSheet.portfolio_allocation_pct}%)\n\n📌 TOP VALUE SINGLES:\n`;
+    let text = `🔥 APEXPREDICT x SPORTYBET ACTION SHEET\nBankroll: ${currencySymbol()}${actionSheet.bankroll.toLocaleString()} | Staked: ${currencySymbol()}${actionSheet.total_allocated_stake.toLocaleString()} (${actionSheet.portfolio_allocation_pct}%)\n\n📌 TOP VALUE SINGLES:\n`;
     actionSheet.singles.forEach((s, i) => {
       text += `${i + 1}. ${s.fixture} -> ${s.selection} (@${s.sportybet_odds}) | Edge: +${s.ev_pct}% | Stake: ${currencySymbol()}${s.stake_amount.toLocaleString()}\n`;
     });
-    if (actionSheet.conservative_double) {
-      const d = actionSheet.conservative_double;
-      text += `\n🎯 CONSERVATIVE VALUE DOUBLE:\n`;
-      d.legs.forEach(l => {
-        text += `• ${l.fixture} -> ${l.selection} (@${l.sportybet_odds})\n`;
+    if (actionSheet.combos) {
+      Object.values(actionSheet.combos).forEach(c => {
+        if (!c) return;
+        text += `\n🎯 ${c.name.toUpperCase()} (@${c.combined_odds} | ${c.combined_win_prob_pct}% prob):\n`;
+        c.legs.forEach(l => {
+          text += `• ${l.fixture} -> ${l.selection} (@${l.sportybet_odds})\n`;
+        });
+        text += `Stake: ${currencySymbol()}${c.stake_amount.toLocaleString()} | Return: ${currencySymbol()}${c.potential_return.toLocaleString()}\n`;
       });
-      text += `Combined Odds: ${d.combined_odds} | Stake: ${currencySymbol()}${d.stake_amount.toLocaleString()} | Return: ${currencySymbol()}${d.potential_return.toLocaleString()}\n`;
     }
     navigator.clipboard.writeText(text);
     setAllCopied(true);
@@ -271,56 +274,106 @@ export default function SportyBetTab() {
             </div>
           </div>
 
-          {/* Conservative 2-Leg Double Accumulator */}
-          {actionSheet.conservative_double && (
-            <div className="bg-gradient-to-br from-[#161F30] to-[#1E293B] border border-emerald-500/40 rounded-2xl p-5 shadow-lg relative overflow-hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                    <Zap className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <h3 className="text-base font-bold text-white">Daily Conservative Value Double</h3>
-                    <p className="text-xs text-slate-400">2 highest-probability +EV legs combined for controlled compounding</p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => copyDouble(actionSheet.conservative_double)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg text-xs font-semibold border border-emerald-500/40 transition-colors self-start sm:self-auto"
-                >
-                  {copiedId === 'double' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  <span>{copiedId === 'double' ? 'Copied!' : 'Copy Double Slip'}</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                {actionSheet.conservative_double.legs.map((leg, idx) => (
-                  <div key={idx} className="bg-[#0F172A] p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+          {/* Multi-Tier Acca Combos Hub (2, 5, 10, 50, 100 Odds) */}
+          {(actionSheet.combos || actionSheet.conservative_double) && (() => {
+            const activeCombo = actionSheet.combos ? actionSheet.combos[selectedComboTab] : actionSheet.conservative_double;
+            return (
+              <div className="bg-gradient-to-br from-[#161F30] to-[#1E293B] border border-slate-800 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-red-600/20 text-red-400">
+                      <Zap className="h-5 w-5" />
+                    </span>
                     <div>
-                      <div className="font-semibold text-sm text-white">{leg.fixture}</div>
-                      <div className="text-xs text-emerald-400 font-medium mt-0.5">{leg.selection}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono font-bold text-white text-sm">@{leg.sportybet_odds}</div>
-                      <div className="text-[11px] text-slate-400 font-mono">{leg.prob_pct}% prob</div>
+                      <h3 className="text-base font-bold text-white">SportyBet Accumulator & Combo Hub</h3>
+                      <p className="text-xs text-slate-400">Targeted multiplier slips built from statistically vetted non-correlated legs</p>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <div className="flex flex-wrap items-center justify-between pt-3 border-t border-slate-800 text-xs font-mono">
-                <div className="flex space-x-4">
-                  <span>Combined Odds: <b className="text-emerald-400">{actionSheet.conservative_double.combined_odds}</b></span>
-                  <span>Win Prob: <b className="text-white">{actionSheet.conservative_double.combined_win_prob_pct}%</b></span>
+                  {activeCombo && (
+                    <button
+                      onClick={() => copyCombo(activeCombo, selectedComboTab)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-red-900/30 transition-colors self-start sm:self-auto"
+                    >
+                      {copiedId === selectedComboTab ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      <span>{copiedId === selectedComboTab ? 'Slip Copied!' : `Copy ${activeCombo.name}`}</span>
+                    </button>
+                  )}
                 </div>
-                <div className="flex space-x-4 mt-2 sm:mt-0">
-                  <span>Stake: <b className="text-amber-400">{currencySymbol()}{actionSheet.conservative_double.stake_amount.toLocaleString()}</b></span>
-                  <span>Potential Win: <b className="text-emerald-400 font-bold">{currencySymbol()}{actionSheet.conservative_double.potential_return.toLocaleString()}</b></span>
-                </div>
+
+                {/* Combo Tier Tabs */}
+                {actionSheet.combos && (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1 bg-[#0F172A] rounded-xl mb-4 border border-slate-800">
+                    {[
+                      { id: 'two_odds', label: '2 Sure Odds', badge: 'Banker' },
+                      { id: 'five_odds', label: '5 Sure Odds', badge: 'Multiplier' },
+                      { id: 'ten_odds', label: '10 Odds', badge: 'Weekend Value' },
+                      { id: 'fifty_odds', label: '50 Mega Odds', badge: 'Jackpot' },
+                      { id: 'hundred_odds', label: '100 Mega Odds', badge: 'Super Ticket' },
+                    ].map(tab => {
+                      const comboData = actionSheet.combos[tab.id];
+                      const isSelected = selectedComboTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setSelectedComboTab(tab.id)}
+                          disabled={!comboData}
+                          className={`py-2 px-2.5 rounded-lg text-xs font-semibold flex flex-col items-center gap-0.5 transition-all ${
+                            isSelected
+                              ? 'bg-red-600 text-white shadow-md shadow-red-900/40'
+                              : comboData
+                              ? 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                              : 'text-slate-600 cursor-not-allowed opacity-50'
+                          }`}
+                        >
+                          <span className="font-bold">{tab.label}</span>
+                          <span className={`text-[10px] font-mono ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                            {comboData ? `@${comboData.combined_odds} (${comboData.legs_count}L)` : 'N/A'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Active Combo Body */}
+                {activeCombo ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto pr-1">
+                      {activeCombo.legs.map((leg, idx) => (
+                        <div key={idx} className="bg-[#0F172A] p-2.5 rounded-xl border border-slate-800 flex justify-between items-center hover:border-slate-700 transition-colors">
+                          <div className="min-w-0 pr-2">
+                            <div className="font-semibold text-xs text-white truncate">{leg.fixture}</div>
+                            <div className="text-[11px] text-emerald-400 font-medium mt-0.5 truncate">{leg.selection}</div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="font-mono font-bold text-white text-xs">@{leg.sportybet_odds}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{leg.prob_pct}% prob</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between pt-3 border-t border-slate-800 text-xs font-mono">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        <span>Combined Odds: <b className="text-emerald-400">@{activeCombo.combined_odds}</b></span>
+                        <span>Win Probability: <b className="text-white">{activeCombo.combined_win_prob_pct}%</b></span>
+                        <span>Total Legs: <b className="text-slate-300">{activeCombo.legs_count}</b></span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 sm:mt-0">
+                        <span>Recommended Stake: <b className="text-amber-400">{currencySymbol()}{activeCombo.stake_amount.toLocaleString()}</b></span>
+                        <span>Potential Payout: <b className="text-emerald-400 font-bold">{currencySymbol()}{activeCombo.potential_return.toLocaleString()}</b></span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-xs text-slate-400">
+                    Combo slip not available for this tier with current edge filters.
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Top Singles Table */}
           <div className="bg-[#161F30] border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
