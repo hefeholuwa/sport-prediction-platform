@@ -1,10 +1,19 @@
 from typing import Dict, List, Any, Optional
 
 class ValueBetDetector:
-    def __init__(self, min_ev_threshold: float = 0.03, kelly_fraction: float = 0.25, max_stake_cap: float = 0.05) -> None:
+    def __init__(
+        self,
+        min_ev_threshold: float = 0.03,
+        kelly_fraction: float = 0.25,
+        max_stake_cap: float = 0.05,
+        max_odds_cap: Optional[float] = None,
+        min_prob_threshold: float = 0.0
+    ) -> None:
         self.min_ev_threshold = min_ev_threshold
         self.kelly_fraction = kelly_fraction
         self.max_stake_cap = max_stake_cap
+        self.max_odds_cap = max_odds_cap
+        self.min_prob_threshold = min_prob_threshold
 
     @staticmethod
     def calculate_ev(prob: float, odds: float) -> float:
@@ -41,29 +50,38 @@ class ValueBetDetector:
         return round(max(0.0, min(recommended, cap)), 4)
 
     def scan_match(self, prediction: Dict[str, Any], odds: Dict[str, float], match_id: int, home_team: str, away_team: str) -> List[Dict[str, Any]]:
-        """Identify all positive EV opportunities across 1X2 and Totals markets."""
+        """Identify all positive EV opportunities across 1X2, Totals, and High-Probability markets."""
         opportunities = []
 
-        def get_prob(key: str, alt_key: str) -> float:
+        def get_prob(key: str, alt_key: str = "") -> float:
             val = prediction.get(key)
-            if val is None:
+            if val is None and alt_key:
                 val = prediction.get(alt_key, 0.0)
-            return val if val is not None else 0.0
+            return float(val) if val is not None else 0.0
 
         markets_to_check = [
             ("Home Win", get_prob("home_win", "home_win_prob"), odds.get("home"), "1X2"),
             ("Draw", get_prob("draw", "draw_prob"), odds.get("draw"), "1X2"),
             ("Away Win", get_prob("away_win", "away_win_prob"), odds.get("away"), "1X2"),
+            ("Over 1.5 Goals", get_prob("over_1_5"), odds.get("over_1_5"), "Totals"),
             ("Over 2.5 Goals", get_prob("over_2_5", "over_2_5_prob"), odds.get("over_2_5"), "Totals"),
             ("Under 2.5 Goals", get_prob("under_2_5", "under_2_5_prob"), odds.get("under_2_5"), "Totals"),
             ("BTTS Yes", get_prob("btts_yes", "btts_yes_prob"), odds.get("btts_yes"), "BTTS"),
-            ("BTTS No", get_prob("btts_no", "btts_no_prob"), odds.get("btts_no"), "BTTS")
+            ("BTTS No", get_prob("btts_no", "btts_no_prob"), odds.get("btts_no"), "BTTS"),
+            ("Double Chance 1X", get_prob("dc_1x"), odds.get("dc_1x"), "Double Chance"),
+            ("Double Chance X2", get_prob("dc_x2"), odds.get("dc_x2"), "Double Chance"),
+            ("Draw No Bet Home", get_prob("dnb_home"), odds.get("dnb_home"), "DNB"),
+            ("Draw No Bet Away", get_prob("dnb_away"), odds.get("dnb_away"), "DNB"),
         ]
 
         for selection, prob, market_odds, market_type in markets_to_check:
             if market_odds is None or prob is None:
                 continue
             if market_odds <= 1.01 or prob <= 0.01:
+                continue
+            if self.max_odds_cap is not None and market_odds > self.max_odds_cap:
+                continue
+            if prob < self.min_prob_threshold:
                 continue
 
             ev = self.calculate_ev(prob, market_odds)
@@ -87,4 +105,5 @@ class ValueBetDetector:
 
         opportunities.sort(key=lambda x: x["ev"], reverse=True)
         return opportunities
+
 

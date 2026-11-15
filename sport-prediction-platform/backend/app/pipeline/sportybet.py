@@ -142,7 +142,7 @@ class SportyBetConnector:
                         elif desc == "no":
                             odds["btts_no"] = val
 
-            # Fill reasonable fallbacks if secondary markets are not yet priced
+            # Fill reasonable fallbacks and derived markets if secondary markets are not yet priced
             if odds["over_2_5"] <= 1.0:
                 odds["over_2_5"] = 1.85
             if odds["under_2_5"] <= 1.0:
@@ -151,6 +151,24 @@ class SportyBetConnector:
                 odds["btts_yes"] = 1.75
             if odds["btts_no"] <= 1.0:
                 odds["btts_no"] = 2.05
+
+            # Derived high-probability markets
+            if odds["home"] > 1.0 and odds["draw"] > 1.0:
+                inv_1x = (1.0 / odds["home"]) + (1.0 / odds["draw"])
+                odds["dc_1x"] = round(1.0 / (inv_1x * 1.05), 2)
+            else:
+                odds["dc_1x"] = 1.35
+
+            if odds["away"] > 1.0 and odds["draw"] > 1.0:
+                inv_x2 = (1.0 / odds["away"]) + (1.0 / odds["draw"])
+                odds["dc_x2"] = round(1.0 / (inv_x2 * 1.05), 2)
+            else:
+                odds["dc_x2"] = 1.40
+
+            if odds["over_2_5"] > 1.0:
+                odds["over_1_5"] = round(max(1.15, min(1.45, odds["over_2_5"] * 0.70)), 2)
+            else:
+                odds["over_1_5"] = 1.28
 
             return {
                 "sportybet_id": event_id,

@@ -110,3 +110,28 @@ def test_api_sportybet_action_sheet():
     assert "potential_return" in first_single
     assert first_single["stake_amount"] > 0
     assert first_single["currency"] == "NGN"
+
+def test_bayesian_prior_shrinkage_prevents_false_underdog_ev():
+    from app.routes.predictions import model
+    # Simulate an unseen team match with extreme bookmaker underdog odds
+    unseen_odds = {"home": 9.64, "draw": 5.50, "away": 1.30}
+    pred = model.predict_match("UnratedClubA", "UnratedClubB", odds=unseen_odds)
+    # The heavy underdog must NOT receive ~40% win probability
+    assert pred["home_win"] < 0.20
+    # The heavy favorite must receive high win probability
+    assert pred["away_win"] > 0.60
+    # Over 1.5 and Double Chance must be present
+    assert "over_1_5" in pred
+    assert "dc_x2" in pred
+    assert pred["dc_x2"] > 0.75
+
+def test_compounder_strategy_odds_and_probability_filtering():
+    resp = client.get("/api/sportybet/value-bets?strategy=compounder&min_ev=0.01")
+    assert resp.status_code == 200
+    bets = resp.json()
+    assert isinstance(bets, list)
+    for b in bets:
+        # In compounder mode, every bet must have safe odds and high probability
+        assert b["bookmaker_odds"] <= 2.25
+        assert b["model_prob"] >= 0.48
+

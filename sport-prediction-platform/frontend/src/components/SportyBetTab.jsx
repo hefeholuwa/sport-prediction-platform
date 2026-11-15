@@ -6,6 +6,7 @@ export default function SportyBetTab() {
   const [bankroll, setBankroll] = useState(50000);
   const [currency, setCurrency] = useState('NGN');
   const [minEv, setMinEv] = useState(0.03);
+  const [strategy, setStrategy] = useState('compounder'); // 'compounder' | 'value'
   const [actionSheet, setActionSheet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -14,7 +15,7 @@ export default function SportyBetTab() {
 
   useEffect(() => {
     loadActionSheet();
-  }, [bankroll, currency, minEv]);
+  }, [bankroll, currency, minEv, strategy]);
 
   async function loadActionSheet() {
     setLoading(true);
@@ -24,7 +25,8 @@ export default function SportyBetTab() {
         bankroll: Number(bankroll) || 50000,
         currency: currency,
         min_ev: Number(minEv),
-        max_bets: 5
+        max_bets: 5,
+        strategy: strategy
       });
       setActionSheet(data);
     } catch (err) {
@@ -105,6 +107,41 @@ export default function SportyBetTab() {
           {allCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           <span>{allCopied ? 'Action Sheet Copied!' : 'Copy Daily Action Slip'}</span>
         </button>
+      </div>
+
+      {/* Strategy Selector & Risk Management */}
+      <div className="bg-[#161F30] border border-slate-800 p-3 rounded-2xl flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div className="flex bg-[#0F172A] p-1 rounded-xl w-full md:w-auto">
+          <button
+            onClick={() => setStrategy('compounder')}
+            className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+              strategy === 'compounder'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/40'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Zap className="h-3.5 w-3.5" />
+            <span>⚡ Daily Compounder (50%–85% Win Rate)</span>
+          </button>
+          <button
+            onClick={() => setStrategy('value')}
+            className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+              strategy === 'value'
+                ? 'bg-red-600 text-white shadow-md shadow-red-900/40'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Flame className="h-3.5 w-3.5" />
+            <span>🎯 Pure Value Hunter (Odds ≤ 3.20)</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 w-full md:w-auto">
+          <ShieldCheck className="h-4 w-4 text-emerald-400 flex-shrink-0" />
+          <span>
+            <b>Anti-Underdog Safeguard Active:</b> Longshots pruned. Odds capped at {strategy === 'compounder' ? '2.25' : '3.20'}.
+          </span>
+        </div>
       </div>
 
       {/* Settings Bar */}
@@ -306,8 +343,14 @@ export default function SportyBetTab() {
                         <td className="py-3.5 px-4 text-center font-mono font-bold text-white">
                           {bet.sportybet_odds.toFixed(2)}
                         </td>
-                        <td className="py-3.5 px-4 text-center font-mono text-emerald-300 font-medium">
-                          {bet.model_prob_pct}%
+                        <td className="py-3.5 px-4 text-center font-mono">
+                          {bet.model_prob_pct >= 55 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              🔥 {bet.model_prob_pct}%
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-medium">{bet.model_prob_pct}%</span>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-center font-mono font-bold text-emerald-400">
                           +{bet.ev_pct}%

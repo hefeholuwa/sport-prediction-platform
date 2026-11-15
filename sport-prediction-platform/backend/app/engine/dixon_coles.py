@@ -72,9 +72,23 @@ class DixonColesModel:
         over_2_5 = float(np.sum(matrix[grid_x + grid_y > 2]))
         under_2_5 = float(np.sum(matrix[grid_x + grid_y <= 2]))
 
+        # Vectorized Over / Under 1.5 (High Strike-Rate)
+        over_1_5 = float(np.sum(matrix[grid_x + grid_y > 1]))
+        under_1_5 = float(np.sum(matrix[grid_x + grid_y <= 1]))
+
         # Both Teams to Score (BTTS)
         btts_yes = float(np.sum(matrix[1:, 1:]))
         btts_no = float(1.0 - btts_yes)
+
+        # High-probability Double Chance (1X, X2, 12)
+        dc_1x = min(0.99, home_win_prob + draw_prob)
+        dc_x2 = min(0.99, draw_prob + away_win_prob)
+        dc_12 = min(0.99, home_win_prob + away_win_prob)
+
+        # Draw No Bet (DNB)
+        dnb_sum = home_win_prob + away_win_prob
+        dnb_home = float(home_win_prob / dnb_sum) if dnb_sum > 0 else 0.5
+        dnb_away = float(away_win_prob / dnb_sum) if dnb_sum > 0 else 0.5
 
         # Top 3 predicted exact scores
         flat_indices = np.argsort(matrix.ravel())[::-1]
@@ -90,10 +104,17 @@ class DixonColesModel:
             "home_win": round(home_win_prob, 4),
             "draw": round(draw_prob, 4),
             "away_win": round(away_win_prob, 4),
+            "over_1_5": round(over_1_5, 4),
+            "under_1_5": round(under_1_5, 4),
             "over_2_5": round(over_2_5, 4),
             "under_2_5": round(under_2_5, 4),
             "btts_yes": round(btts_yes, 4),
             "btts_no": round(btts_no, 4),
+            "dc_1x": round(dc_1x, 4),
+            "dc_x2": round(dc_x2, 4),
+            "dc_12": round(dc_12, 4),
+            "dnb_home": round(dnb_home, 4),
+            "dnb_away": round(dnb_away, 4),
             "home_xg": round(float(home_xg), 2),
             "away_xg": round(float(away_xg), 2),
             "predicted_score": top_scores[0]["score"],
@@ -172,16 +193,57 @@ class DixonColesModel:
                 "defense": float(def_res[i])
             }
 
-    def predict_match(self, home_team: str, away_team: str) -> Dict[str, Any]:
-        """Predict match probabilities given two team names."""
-        h_att = self.params.get(home_team, {}).get("attack", 1.0)
-        h_def = self.params.get(home_team, {}).get("defense", 1.0)
-        a_att = self.params.get(away_team, {}).get("attack", 1.0)
-        a_def = self.params.get(away_team, {}).get("defense", 1.0)
+    def predict_match(
+        self,
+        home_team: str,
+        away_team: str,
+        odds: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
+        """Predict match probabilities given two team names with market prior shrinkage."""
+        has_h = home_team in self.params
+        has_a = away_team in self.params
 
-        home_xg = max(0.2, h_att * a_def * self.home_advantage)
-        away_xg = max(0.2, a_att * h_def)
+        if has_h and has_a:
+            h_att = self.params[home_team].get("attack", 1.0)
+            h_def = self.params[home_team].get("defense", 1.0)
+            a_att = self.params[away_team].get("attack", 1.0)
+            a_def = self.params[away_team].get("defense", 1.0)
+            home_xg = max(0.2, h_att * a_def * self.home_advantage)
+            away_xg = max(0.2, a_att * h_def)
+        elif odds and odds.get("home") and odds.get("away") and odds.get("draw"):
+            # Market-implied Bayesian shrinkage: anchor unrated teams to bookmaker consensus
+            o_h = float(odds["home"])
+            o_d = float(odds["draw"])
+            o_a = float(odds["away"])
+            if o_h > 1.0 and o_d > 1.0 and o_a > 1.0:
+                inv_h = 1.0 / o_h
+                inv_d = 1.0 / o_d
+                inv_a = 1.0 / o_a
+                margin = inv_h + inv_d + inv_a
+                fair_h = inv_h / margin
+                fair_a = inv_a / margin
+
+                total_xg = 2.65
+                denom = max(0.01, fair_h + fair_a)
+                ratio = fair_h / denom
+                home_xg = max(0.25, total_xg * ratio)
+                away_xg = max(0.25, total_xg * (1.0 - ratio))
+            else:
+                h_att = self.params.get(home_team, {}).get("attack", 1.0)
+                h_def = self.params.get(home_team, {}).get("defense", 1.0)
+                a_att = self.params.get(away_team, {}).get("attack", 1.0)
+                a_def = self.params.get(away_team, {}).get("defense", 1.0)
+                home_xg = max(0.2, h_att * a_def * self.home_advantage)
+                away_xg = max(0.2, a_att * h_def)
+        else:
+            h_att = self.params.get(home_team, {}).get("attack", 1.0)
+            h_def = self.params.get(home_team, {}).get("defense", 1.0)
+            a_att = self.params.get(away_team, {}).get("attack", 1.0)
+            a_def = self.params.get(away_team, {}).get("defense", 1.0)
+            home_xg = max(0.2, h_att * a_def * self.home_advantage)
+            away_xg = max(0.2, a_att * h_def)
 
         matrix = self.calculate_score_matrix(home_xg, away_xg, self.rho, max_goals=MAX_GOALS_MATRIX)
         return self.extract_market_probabilities(matrix, home_xg, away_xg)
+
 

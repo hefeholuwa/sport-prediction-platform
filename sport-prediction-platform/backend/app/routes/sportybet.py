@@ -15,6 +15,9 @@ class ActionSheetRequest(BaseModel):
     currency: str = Field(default="NGN", description="Currency symbol/code (e.g. NGN, USD, GBP)")
     min_ev: float = Field(default=0.03, ge=0.0, description="Minimum edge threshold (e.g. 0.03 for 3%)")
     max_bets: int = Field(default=5, ge=1, le=20, description="Maximum number of singles in action sheet")
+    strategy: str = Field(default="compounder", description="'compounder' (High strike-rate 50%+ win rate) or 'value' (Pure +EV)")
+    max_odds: float = Field(default=3.20, gt=1.0, description="Max decimal odds cutoff to exclude longshots")
+    min_prob: float = Field(default=0.40, ge=0.0, le=1.0, description="Minimum win probability")
 
 
 async def get_all_sportybet_fixtures(league_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -43,10 +46,13 @@ async def get_all_sportybet_fixtures(league_id: Optional[str] = None) -> List[Di
                     "home": m["odds_home"],
                     "draw": m["odds_draw"],
                     "away": m["odds_away"],
+                    "over_1_5": 1.28,
                     "over_2_5": 1.85,
                     "under_2_5": 1.95,
                     "btts_yes": 1.75,
-                    "btts_no": 2.05
+                    "btts_no": 2.05,
+                    "dc_1x": 1.35,
+                    "dc_x2": 1.40
                 }
             })
 
@@ -62,16 +68,28 @@ async def list_sportybet_fixtures(league_id: Optional[str] = Query(None)) -> Lis
 @router.get("/value-bets", response_model=List[Dict[str, Any]])
 async def list_sportybet_value_bets(
     min_ev: float = Query(0.03, ge=0.0, description="Minimum EV threshold"),
-    market: Optional[str] = Query(None, description="Market filter (e.g. 1X2, Totals, BTTS)"),
-    league_id: Optional[str] = Query(None, description="League code filter (e.g. E0, SP1, ALL)")
+    market: Optional[str] = Query(None, description="Market filter (e.g. 1X2, Totals, BTTS, Double Chance)"),
+    league_id: Optional[str] = Query(None, description="League code filter (e.g. E0, SP1, ALL)"),
+    max_odds: float = Query(3.50, gt=1.0, description="Max decimal odds cutoff to exclude longshots"),
+    min_prob: float = Query(0.20, ge=0.0, description="Minimum win probability"),
+    strategy: Optional[str] = Query("all", description="Strategy filter: 'compounder', 'value', or 'all'")
 ) -> List[Dict[str, Any]]:
     """Scan SportyBet odds with the Dixon-Coles model and return profitable +EV betting edges."""
     fixtures = await get_all_sportybet_fixtures(league_id)
-    detector = ValueBetDetector(min_ev_threshold=min_ev)
+    
+    eff_max_odds = 2.25 if strategy == "compounder" else max_odds
+    eff_min_prob = 0.48 if strategy == "compounder" else min_prob
+
+    detector = ValueBetDetector(
+        min_ev_threshold=min_ev,
+        max_odds_cap=eff_max_odds,
+        min_prob_threshold=eff_min_prob
+    )
 
     value_bets: List[Dict[str, Any]] = []
     for idx, f in enumerate(fixtures):
-        pred = model.predict_match(f["home_team"], f["away_team"])
+        # Anchor predictions with bookmaker consensus for uncalibrated teams
+        pred = model.predict_match(f["home_team"], f["away_team"], odds=f.get("odds"))
         bets = detector.scan_match(
             prediction=pred,
             odds=f["odds"],
@@ -90,15 +108,27 @@ async def list_sportybet_value_bets(
     if market and market.upper() != "ALL":
         value_bets = [b for b in value_bets if b.get("market", "").upper() == market.strip().upper()]
 
-    value_bets.sort(key=lambda x: x["ev"], reverse=True)
+    if strategy == "compounder":
+        # In compounder mode, prioritize high win probability first, then edge
+        value_bets.sort(key=lambda x: (x["model_prob"], x["ev"]), reverse=True)
+    else:
+        value_bets.sort(key=lambda x: x["ev"], reverse=True)
+
     return value_bets
 
 
 @router.post("/action-sheet", response_model=Dict[str, Any])
 async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
     """Generate a daily actionable betslip on SportyBet (singles + conservative accumulator)."""
-    # Fetch all value bets meeting min_ev
-    raw_bets = await list_sportybet_value_bets(min_ev=req.min_ev, market="ALL", league_id="ALL")
+    # Fetch all value bets meeting min_ev and strategy criteria
+    raw_bets = await list_sportybet_value_bets(
+        min_ev=req.min_ev,
+        market="ALL",
+        league_id="ALL",
+        max_odds=req.max_odds,
+        min_prob=req.min_prob,
+        strategy=req.strategy
+    )
 
     singles = []
     total_allocated_stake = 0.0
@@ -157,6 +187,7 @@ async def generate_action_sheet(req: ActionSheetRequest) -> Dict[str, Any]:
 
     return {
         "status": "ready",
+        "strategy": req.strategy,
         "bankroll": req.bankroll,
         "currency": req.currency,
         "total_allocated_stake": round(total_allocated_stake, 2),
